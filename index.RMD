@@ -1,0 +1,120 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "BNL - 14 jun 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE, cache = TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants in a research study. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+Thanks to the following authors of the paper on the study for sharing the data:
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Here is a short description of the datasets content from the authors' website:
+
+*"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)."*
+
+The training data consists of accelerometer data and an identifying label corresponding to the 6 classes (A-E). The testing data consists of accelerometer data without the identifying label. Our goal is to build a model and predict the labels for the test set observations.
+
+
+# Data Loading and Cleaning
+
+First we load the required packages in order to make this analysis.
+
+```{r, message=FALSE, warning=FALSE}
+rm(list=ls())
+library(caret)
+library(randomForest)
+set.seed(123)
+```
+
+Then we download the datasets and read them into R. 
+
+```{r}
+# set the URL for the datasets and download them
+UrlTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+UrlTest  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(url(UrlTrain))
+testing  <- read.csv(url(UrlTest))
+
+# Explore data
+dim(training)
+dim(testing)
+```
+
+Both datasets have lots of variables (160). But as can be seen in the training data set using the commands `head()` or `str()` a large number of the variables have plenty of NA, that should be removed. We will also remove variables with near zero variance (NZV) and finally ID variables are also removed as well. 
+
+```{r}
+# remove variables from training set with nearly zero variance
+nzv <- nearZeroVar(training)
+training <- training[, -nzv]
+
+dim(training)[2]
+
+# remove variables from training set that are almost always NA
+mostlyNA <- sapply(training, function(x) mean(is.na(x))) > 0.95
+training <- training[, mostlyNA==FALSE]
+
+dim(training)[2]
+
+# Since the first 5 variables don't make any sense for prediction, they will be removed:
+training <- training[, -(1:5)]
+
+dim(training)[2]
+```
+
+We see that the numbers of variables in the training dataset are heavily reduced from 160 to 54! 
+We will not make any cleaning in the test dataset since it will only be used to answer the quiz. 
+
+Finally we randomly split the full training dataset into a new (smaller) training set and a set for validation/testing:
+
+```{r}
+# create a partition with the training dataset and split it into a new training set and a validation/test set
+set.seed(123)
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainSet <- training[inTrain, ]
+ValSet  <- training[-inTrain, ]
+```
+
+# Model Building
+
+We will start with a Random Forest model, to see if it would have acceptable performance. We fit the model on the new test set, and instruct the "train" function to use 3-fold cross-validation in order to select optimal tuning parameters for this model.
+
+```{r}
+# instruct train to use 3-fold CV to select optimal tuning parameters
+ControlFit <- trainControl(method="cv", number=3, verboseIter=F)
+
+# fit rf-model on TrainSet and print final model 
+modFitRF <- train(classe ~ ., data=TrainSet, method="rf", trControl=ControlFit)
+modFitRF$finalModel
+```
+
+As can be seen in the print above, the model decided to use 500 trees and tried 27 variables at each split.
+
+
+# Model Evaluation 
+
+We will now use the fitted model to predict the label ("classe") in the validation/testing set, and show the confusion matrix to compare the predicted versus the actual labels:
+
+```{r}
+# prediction on ValSet
+predictRF <- predict(modFitRF, newdata=ValSet)
+
+# Show confusion matrix
+confusionMatrix(predictRF, ValSet$classe)
+```
+
+As can be seen above the accuracy is 99.8%, thus the out-of-sample error is 0.2%.
+
+This is actually an excellent result, so rather than trying other models based on additional algorithms, the Random Forests model will be used to predict the 20 quiz results on the testing dataset as shown below:
+
+```{r}
+# prediction on testing dataset
+predict(modFitRF, newdata=testing)
+```
